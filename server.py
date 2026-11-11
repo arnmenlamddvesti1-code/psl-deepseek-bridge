@@ -86,6 +86,8 @@ def _extract_image_bytes(raw_input: Union[str, bytes]) -> bytes:
 
 
 @app.get("/health")
+@app.get("/healthz")
+@app.get("/status")
 @app.get("/")
 async def health_check():
     """Health check endpoint for Railway and monitoring."""
@@ -98,6 +100,8 @@ async def health_check():
 
 
 @app.post("/analyze")
+@app.post("/v1/evaluate")
+@app.post("/evaluate")
 async def analyze_face(
     request: Request,
     file: Optional[UploadFile] = File(None),
