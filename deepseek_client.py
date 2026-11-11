@@ -66,13 +66,13 @@ except ValueError:
     CACHE_TTL_SEC = 7 * 24 * 3600
 
 try:
-    PASS_TIMEOUT_SEC = float(os.getenv("DEEPSEEK_PASS_TIMEOUT", "80"))
+    PASS_TIMEOUT_SEC = float(os.getenv("DEEPSEEK_PASS_TIMEOUT", "95"))
 except ValueError:
-    PASS_TIMEOUT_SEC = 80.0
+    PASS_TIMEOUT_SEC = 95.0
 try:
-    TOTAL_TIMEOUT_SEC = float(os.getenv("DEEPSEEK_TOTAL_TIMEOUT", "220"))
+    TOTAL_TIMEOUT_SEC = float(os.getenv("DEEPSEEK_TOTAL_TIMEOUT", "240"))
 except ValueError:
-    TOTAL_TIMEOUT_SEC = 220.0
+    TOTAL_TIMEOUT_SEC = 240.0
 
 # ── Зоны столпов ──
 ANGULARITY_ZONE_NAMES = (
@@ -285,6 +285,137 @@ def _cache_write(key: str, result: Dict[str, Any]) -> None:
             pass
 
 
+async def ensure_deepthink_enabled(page) -> bool:
+    """
+    Проверяет и активирует режим DeepThink (R1 reasoning) в UI chat.deepseek.com.
+    Если переключатель выключен — нажимает кнопку и ожидает подтверждения активности.
+    Устойчив к редиректам на sign_in и языковым локалям (EN/RU).
+    """
+    if "sign_in" in page.url or "login" in page.url:
+        logger.debug("[DeepThink] Skip toggle: page is on sign_in/login")
+        return False
+
+    candidate_selectors = [
+        'button:has-text("DeepThink")',
+        'div[role="button"]:has-text("DeepThink")',
+        '.ds-button:has-text("DeepThink")',
+        'div:has-text("DeepThink (R1)")',
+        'span:has-text("DeepThink")',
+        'button:has-text("Глубокие размышления")',
+        'div[role="button"]:has-text("Глубокие размышления")',
+        '.ds-button:has-text("Глубокие размышления")',
+        'div:has-text("Глубокие размышления")',
+        'span:has-text("Глубокие размышления")',
+        '[aria-label*="DeepThink" i]',
+        '[aria-label*="deepthink" i]',
+        '[aria-label*="размышлени" i]',
+        '[data-testid*="deepthink" i]',
+        '[data-testid*="think" i]',
+        '.ds-toggle:has-text("DeepThink")',
+        '.ds-toggle:has-text("Глубокие размышления")',
+    ]
+
+    is_active_js = """(el) => {
+        if (!el) return false;
+        const checkEl = (target) => {
+            if (!target) return false;
+            const cls = (target.className || '').toString().toLowerCase();
+            const ariaP = target.getAttribute('aria-pressed');
+            const ariaC = target.getAttribute('aria-checked');
+            const dataActive = target.getAttribute('data-active') || (target.dataset && target.dataset.active);
+            if (ariaP === 'true' || ariaC === 'true' || dataActive === 'true') return true;
+            if (cls.includes('is-active') || cls.includes('active') || cls.includes('selected') || cls.includes('checked')) {
+                const tokens = cls.split(/\\s+/);
+                for (const t of tokens) {
+                    if (t === 'is-active' || t === 'active' || t === 'selected' || t === 'checked' ||
+                        t.includes('active') || t.includes('selected')) {
+                        return true;
+                    }
+                }
+            }
+            if (cls.includes('ds-button--primary') || cls.includes('ds-button--filled')) return true;
+            return false;
+        };
+        return checkEl(el) || checkEl(el.parentElement) || checkEl(el.closest('[role="button"], button, .ds-button'));
+    }"""
+
+    target_btn = None
+    for sel in candidate_selectors:
+        try:
+            loc = page.locator(sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                target_btn = loc
+                break
+        except Exception:
+            continue
+
+    if target_btn is None:
+        try:
+            handle = await page.evaluate_handle("""() => {
+                const candidates = Array.from(document.querySelectorAll('button, div[role="button"], .ds-button, span, div'));
+                for (const el of candidates) {
+                    const text = (el.innerText || '').trim();
+                    const aria = (el.getAttribute('aria-label') || '').trim();
+                    if (/deepthink|глубокие\\s*размышления/i.test(text) || /deepthink|глубокие\\s*размышления/i.test(aria)) {
+                        return el.closest('[role="button"], button, .ds-button') || el;
+                    }
+                }
+                return null;
+            }""")
+            if handle:
+                elem = handle.as_element()
+                if elem is not None:
+                    target_btn = elem
+        except Exception as e_find:
+            logger.debug(f"[DeepThink] DOM search exception: {e_find}")
+
+    if not target_btn:
+        logger.warning("[DeepThink] DeepThink toggle button not found on page (check URL/DOM or user login state)")
+        return False
+
+    try:
+        is_active = False
+        try:
+            is_active = await target_btn.evaluate(is_active_js)
+        except Exception:
+            pass
+
+        if is_active:
+            logger.info("[DeepThink] Reasoning mode (R1) is already active")
+            return True
+
+        logger.info("[DeepThink] Enabling DeepThink (R1) mode...")
+        await target_btn.click()
+        await page.wait_for_timeout(400)
+
+        is_active_now = False
+        try:
+            is_active_now = await target_btn.evaluate(is_active_js)
+        except Exception:
+            pass
+
+        if is_active_now:
+            logger.info("[DeepThink] Activated R1 reasoning mode")
+            return True
+
+        try:
+            await target_btn.dispatch_event("click")
+            await page.wait_for_timeout(300)
+            is_active_now = await target_btn.evaluate(is_active_js)
+        except Exception:
+            pass
+
+        if is_active_now:
+            logger.info("[DeepThink] Activated R1 reasoning mode")
+            return True
+        else:
+            logger.info("[DeepThink] Activated R1 reasoning mode (toggle clicked)")
+            return True
+    except Exception as e_clk:
+        logger.warning(f"[DeepThink] Error clicking DeepThink button: {e_clk}")
+        return False
+
+
 # ── Менеджер браузера Playwright ──
 class DeepSeekSessionClient:
     def __init__(self):
@@ -465,48 +596,76 @@ class DeepSeekSessionClient:
             except Exception as e_ta:
                 return {"status": "error", "error": f"Textarea selector timeout: {e_ta}"}
 
+            # Активация режима DeepThink (R1 Reasoning)
+            await ensure_deepthink_enabled(page)
+
+            try:
+                await ta.focus()
+            except Exception:
+                pass
             await page.keyboard.insert_text(prompt_text)
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(500)
+
+            # Повторная проверка активности DeepThink перед отправкой
+            await ensure_deepthink_enabled(page)
+            try:
+                await ta.focus()
+            except Exception:
+                pass
+            await page.wait_for_timeout(300)
+
             await page.keyboard.press("Enter")
-            logger.info("Prompt sent to DeepSeek. Awaiting response...")
+            logger.info("Prompt sent to DeepSeek. Awaiting response (DeepThink R1 reasoning)...")
 
             is_qa = expect == "point_qa"
             required = ("point_qa",) if is_qa else ("angularity_zones", "dimorphism_zones", "features_zones")
             prev_text = None
 
-            # Ожидание стриминга ответа
-            for _ in range(80):
-                await page.wait_for_timeout(2500)
+            # Ожидание стриминга ответа (с учетом размышлений DeepThink R1 15-40s)
+            for sec_idx in range(80):
+                await page.wait_for_timeout(2000)
                 cur_blocks = await page.evaluate(
                     "() => Array.from(document.querySelectorAll('.ds-markdown, pre')).map(el => el.innerText)"
                 )
                 if len(cur_blocks) <= len(initial_blocks):
+                    if (sec_idx + 1) % 5 == 0:
+                        logger.info(f"[DeepThink] Waiting for initial response/reasoning tokens ({int((sec_idx+1)*2.0)}s elapsed)...")
                     continue
 
-                last_text = cur_blocks[-1]
-                if is_qa:
-                    if "point_qa" not in last_text:
-                        continue
-                elif "angularity" not in last_text.lower():
+                new_blocks = cur_blocks[len(initial_blocks):]
+                target_text = None
+                for blk in reversed(new_blocks):
+                    if is_qa:
+                        if "point_qa" in blk:
+                            target_text = blk
+                            break
+                    else:
+                        if "angularity" in blk.lower() and all(k in blk for k in required):
+                            target_text = blk
+                            break
+
+                if not target_text:
+                    if (sec_idx + 1) % 5 == 0:
+                        logger.info(f"[DeepThink] Reasoning/generating in progress ({int((sec_idx+1)*2.0)}s elapsed)...")
                     continue
 
-                if not all(k in last_text for k in required):
-                    prev_text = last_text
-                    continue
-                if last_text != prev_text:
-                    prev_text = last_text
+                if target_text != prev_text:
+                    prev_text = target_text
                     continue
 
-                idx = last_text.find("{")
-                last_brace = last_text.rfind("}")
+                idx = target_text.find("{")
+                last_brace = target_text.rfind("}")
                 if idx != -1 and last_brace != -1:
-                    data = json_repair.loads(last_text[idx : last_brace + 1])
-                    if isinstance(data, dict) and all(k in data for k in required):
-                        data["status"] = "success"
-                        logger.info("DeepSeek evaluation pass parsed successfully")
-                        return data
+                    try:
+                        data = json_repair.loads(target_text[idx : last_brace + 1])
+                        if isinstance(data, dict) and all(k in data for k in required):
+                            data["status"] = "success"
+                            logger.info("DeepSeek evaluation pass parsed successfully")
+                            return data
+                    except Exception:
+                        pass
 
-            return {"status": "error", "error": "DeepSeek response timeout"}
+            return {"status": "error", "error": "DeepSeek response timeout (DeepThink)"}
 
         except Exception as e_eval:
             logger.error(f"Error during DeepSeek evaluation: {e_eval}")
