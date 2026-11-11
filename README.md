@@ -24,7 +24,7 @@
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
-| `DEEPSEEK_USER_TOKEN` | `k8kbvU1CMaeRCD3h9xtmC4VB9WeIGVDqppaxOi0YhDaMqbPYVCHjsxhZWQ3nHGKR` | Пользовательский токен (raw строка или JSON) |
+| `DEEPSEEK_USER_TOKEN` | `k8kbvUlCMaeRCD3h9xtmC4VB9WeIGVDqppax0ioYhDaMqbPYVCHjsxhZWQ3nHGKR` | Пользовательский токен (raw строка или JSON) |
 | `DEEPSEEK_SESSION_ID` | `92f8f850d7084bcfbc2fd1fbfb1e9227` | Cookie `ds_session_id` из браузера |
 | `DEEPSEEK_DEVICE_ID` | `bf72ea1a-e951-415f-984a-80336b48dea0` | Device ID сессии |
 | `DEEPSEEK_PASSES` | `1` | Количество проходов для медианы (1 для быстрого ответа, 2-3 для макс. точности) |

@@ -21,9 +21,17 @@ from prompts import MASTER_PROMPT_CALIBRATED_V2, MASTER_PROMPT_RAW, render_promp
 
 logger = logging.getLogger("DeepSeekBridge.Client")
 
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path)
+except Exception:
+    pass
+
 # ── Авторизационные токены по умолчанию ──
-_DEFAULT_RAW_TOKEN = "k8kbvU1CMaeRCD3h9xtmC4VB9WeIGVDqppaxOi0YhDaMqbPYVCHjsxhZWQ3nHGKR"
-_DEFAULT_USER_TOKEN_JSON = '{"value":"k8kbvU1CMaeRCD3h9xtmC4VB9WeIGVDqppaxOi0YhDaMqbPYVCHjsxhZWQ3nHGKR","__version":"0"}'
+_DEFAULT_RAW_TOKEN = "k8kbvUlCMaeRCD3h9xtmC4VB9WeIGVDqppax0ioYhDaMqbPYVCHjsxhZWQ3nHGKR"
+_DEFAULT_USER_TOKEN_JSON = '{"value":"k8kbvUlCMaeRCD3h9xtmC4VB9WeIGVDqppax0ioYhDaMqbPYVCHjsxhZWQ3nHGKR","__version":"0"}'
 _DEFAULT_SESSION_ID = "92f8f850d7084bcfbc2fd1fbfb1e9227"
 _DEFAULT_DEVICE_ID = "bf72ea1a-e951-415f-984a-80336b48dea0"
 
