@@ -159,7 +159,7 @@ def _coerce_zone_map(raw: Any, names: Tuple[str, ...]) -> Optional[Dict[str, flo
             return None
         if not math.isfinite(number):
             return None
-        out[name] = round(max(1.0, min(10.0, number)), 2)
+        out[name] = round(max(0.0, min(10.0, number)), 2)
     return out
 
 
